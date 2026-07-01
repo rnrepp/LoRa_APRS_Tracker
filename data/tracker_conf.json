@@ -117,10 +117,10 @@
 		}
 	],
 	"bluetooth": {
-		"active": false,
-		"deviceName": "LoRaTracker",
+		"active": true,
+		"deviceName": "LoRaHammerTrack",
 		"useBLE": false,
-		"useKISS": false
+		"useKISS": true
 	},
 	"pttTrigger": {
 		"active": false,

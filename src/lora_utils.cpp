@@ -57,6 +57,17 @@ bool transmitFlag    = true;
 
 namespace LoRa_Utils {
 
+    void setHammerTX() {
+        digitalWrite(RADIO_RXEN, LOW);  // Turn off LNA (Receive)
+        digitalWrite(RADIO_TXEN, HIGH); // Turn on PA (Transmit)
+        delay(2); // Allow the RF switch to settle
+    }
+
+    void setHammerRX() {
+        digitalWrite(RADIO_TXEN, LOW);  // Turn off PA
+        digitalWrite(RADIO_RXEN, HIGH); // Turn on LNA
+    }
+
     void setFlag(void) {
         operationDone = true;
     }
@@ -157,6 +168,34 @@ namespace LoRa_Utils {
             radio.setCurrentLimit(140); // to be validated (100 , 120, 140)?
         #endif
 
+        #ifdef ESP32_DIY_2W_Lora
+            pinMode(RADIO_RXEN, OUTPUT);
+            pinMode(RADIO_TXEN, OUTPUT);
+            setHammerRX(); // Default to listening
+            radio.setCurrentLimit(140); // to be validated (100 , 120, 140)?
+            // 0.6V to 3.3V DC-DC for max efficiency/power
+            state = radio.setRegulatorMode(RADIOLIB_SX126X_REGULATOR_DCDC); 
+            if (state != RADIOLIB_ERR_NONE) {
+            Serial.println(F("Regulator config failed!"));}
+            Serial.println("2W Hammer Hardware: RF Switches Initialized.");
+            #ifdef ESP32_DIY_2W_Lora
+            // This is the "Nuclear Option" for SX1268 Power
+            // 0x04 = +22dBm output power
+            // 0x07 = Duty Cycle (Max for SX1268)
+            // 0x00 = HP PA (High Power)
+            radio.setPaConfig(0x04, 0x07, 0x00, 0x01); 
+            
+            // Set Drive to Max
+            radio.setOutputPower(22); 
+            int regState = radio.setRegulatorMode(RADIOLIB_SX126X_REGULATOR_DCDC);
+            if (regState == RADIOLIB_ERR_NONE) {
+                Serial.println("CONFIRMED: DC-DC Buck Converter Active");
+            } else {
+                Serial.println("FAILURE: Chip stuck in LDO mode - Power will be limited");
+            }
+#endif
+        #endif
+
         #if (defined(HAS_SX1268) || defined(HAS_SX1262)) && !defined(HAS_1W_LORA)
             state = radio.setOutputPower(currentLoRaType->power + 2); // values available: 10, 17, 22 --> if 20 in tracker_conf.json it will be updated to 22.
             radio.setCurrentLimit(140);
@@ -186,27 +225,38 @@ namespace LoRa_Utils {
         }
     }
 
-    void sendNewPacket(const String& newPacket) {
+void sendNewPacket(const String& newPacket) {
         logger.log(logging::LoggerLevel::LOGGER_LEVEL_INFO, "LoRa Tx","---> %s", newPacket.c_str());
-        /*logger.log(logging::LoggerLevel::LOGGER_LEVEL_WARN, "LoRa","Send data: %s", newPacket.c_str());
-        logger.log(logging::LoggerLevel::LOGGER_LEVEL_ERROR, "LoRa","Send data: %s", newPacket.c_str());
-        logger.log(logging::LoggerLevel::LOGGER_LEVEL_DEBUG, "LoRa","Send data: %s", newPacket.c_str());*/
+
+        #ifdef ESP32_DIY_2W_Lora
+            setHammerTX(); 
+            // Force the power setting right before the hit to ensure it's at 22
+            radio.setOutputPower(currentLoRaType->power + 2); 
+        #endif
 
         if (Config.ptt.active) {
             digitalWrite(Config.ptt.io_pin, Config.ptt.reverse ? LOW : HIGH);
             delay(Config.ptt.preDelay);
         }
         if (Config.notification.ledTx) digitalWrite(Config.notification.ledTxPin, HIGH);
+<<<<<<< Updated upstream
         if (Config.notification.buzzerActive && Config.notification.txBeep) NOTIFICATION_Utils::beaconTxBeep();
 
         #if defined(TTGO_T_BEAM_1W)
             digitalWrite(RADIO_RXEN, LOW);
         #endif
+=======
+        
+        // This is where the actual RF happens
+>>>>>>> Stashed changes
         int state = radio.transmit("\x3c\xff\x01" + newPacket);
+        
+        #ifdef ESP32_DIY_2W_Lora
+            setHammerRX();
+        #endif
+
         transmitFlag = true;
-        if (state == RADIOLIB_ERR_NONE) {
-            //Serial.println(F("success!"));
-        } else {
+        if (state != RADIOLIB_ERR_NONE) {
             Serial.print(F("Tx failed, code "));
             Serial.println(state);
         }
